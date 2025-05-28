@@ -16,44 +16,67 @@ import java.io.ByteArrayOutputStream;
 import ij.measure.ResultsTable;
 
 /**
+ * ImplantoMetrics - Fiji plugin for automated analysis of 3D invasion images.
+ *
+ * This plugin is part of the software described in the publication:
+ * "ImplantoMetrics - Multidimensional trophoblast invasion assessment by combining
+ * 3D-in-vitro modeling and deep learning analysis" (see https://doi.org/xyz123).
+ *
+ * It loads a pretrained ONNX model to extract six key morphological parameters
+ * from segmented and binarized microscopy images of spheroids:
+ *
+ *   1. Spheroid radius
+ *   2. Total spheroid and cell projections area
+ *   3. Migration/invasion radius
+ *   4. Distribution of migration/invasion
+ *   5. Number of cell projections
+ *   6. Circularity
+ *
+ * The ParameterButton class runs this analysis and displays the values
+ * in a ResultsTable in FIJI.
+ */
+ /**
  * The ParameterButton class implements the PlugIn interface, making it compatible with FIJI's plugin system.
  * This class is designed to analyze images for embryo implantation studies by leveraging a pre-trained ONNX
  * machine learning model. It processes images, feeds them into the model, and displays the analyzed parameters
  * in a user-friendly format.
  */
-public class ParameterButonom implements PlugIn {
+public class ParameterButon implements PlugIn {
 
     private static Map<String, Float> lastResults = new HashMap<>();
 
     @Override
     public void run(String arg) {
-        System.out.println("ParameterButton wird gestartet...");
+        System.out.println("ParameterButton starting...");
 
         try {
+            // Load ONNX runtime environment and model session
             OrtEnvironment environment = OrtEnvironment.getEnvironment();
             OrtSession session = createSessionWithModel(environment);
 
+            // Load the currently opened image in FIJI (should be binarized and segmented)
             ImagePlus img = IJ.getImage();
             if (img == null) {
-                IJ.error("Fehler", "Kein Bild geöffnet");
+                IJ.error("Error", "No image open");
                 return;
             }
-            System.out.println("Bild erfolgreich geladen.");
+            System.out.println("Image loaded successfully.");
 
-            // Process the image
+            // Convert image to float buffer format compatible with the model input
             FloatBuffer floatBuffer = processImage(img);
 
             long[] shape = {1, 299, 299, 1};
             OnnxTensor tensor = OnnxTensor.createTensor(environment, floatBuffer, shape);
 
+            // Prepare input and run the model
             Map<String, OnnxTensor> inputs = prepareInputs(session, tensor);
             OrtSession.Result result = session.run(inputs);
             showResultsInTable(result);
 
         } catch (OrtException e) {
-            IJ.error("ONNX Runtime Fehler", e.getMessage());
+            IJ.error("ONNX Runtime Error", e.getMessage());
         } catch (Exception e) {
-            IJ.error("Allgemeiner Fehler", e.getMessage());
+            IJ.error("General Error", e.getMessage());
         }
     }
 
@@ -72,20 +95,21 @@ public class ParameterButonom implements PlugIn {
         String modelResourcePath = "/input15.4.onnx";
         try (InputStream modelInputStream = getClass().getResourceAsStream(modelResourcePath)) {
             if (modelInputStream == null) {
-                throw new OrtException("Das ONNX-Modell konnte nicht geladen werden.");
+                throw new OrtException("ONNX model could not be loaded.");
             }
             byte[] modelBytes = readAllBytes(modelInputStream);
             return environment.createSession(modelBytes, new OrtSession.SessionOptions());
         } catch (IOException e) {
-            OrtException ortException = new OrtException("Fehler beim Lesen des ONNX-Modells.");
+            OrtException ortException = new OrtException("Error reading the ONNX model.");
             ortException.initCause(e);
             throw ortException;
         }
     }
 
     private FloatBuffer processImage(ImagePlus img) {
-        ImageProcessor ip = img.getProcessor().convertToByte(true); // Konvertiere zu Graustufen
-        ip = ip.resize(299, 299); // Ändere die Größe auf 299x299
+        // Convert image to grayscale and resize to 299x299 as required by the ONNX model (e.g., Xception)
+        ImageProcessor ip = img.getProcessor().convertToByte(true);
+        ip = ip.resize(299, 299);
         return FloatBuffer.wrap(imageToFloatArray(ip));
     }
 
@@ -97,7 +121,7 @@ public class ParameterButonom implements PlugIn {
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 int pixel = ip.getPixel(x, y);
-                floats[i++] = (pixel & 0xff) / 255.0f; // Graustufenwert extrahieren und normalisieren
+                floats[i++] = (pixel & 0xff) / 255.0f; // Normalize grayscale value
             }
         }
         return floats;
@@ -115,37 +139,36 @@ public class ParameterButonom implements PlugIn {
             ResultsTable rt = new ResultsTable();
             float[][] outputData = (float[][]) result.get(0).getValue();
 
-            // Definiere die Namen der Ausgabeparameter
-            String[] parameterNames = {"spheroid radius", "total spheroid and cell projections area", "the migration/invasion radius", "the distribution of migration/invasion", "the number of cell projections", "circularity"};
+            // Define the names of the output parameters corresponding to model outputs
+            String[] parameterNames = {
+                "spheroid radius", "total spheroid and cell projections area",
+                "the migration/invasion radius", "the distribution of migration/invasion",
+                "the number of cell projections", "circularity"
+            };
 
-            lastResults.clear(); // Clear previous results
+            lastResults.clear();
 
-            // Gehe durch jede Zeile von outputData
             for (float[] rowData : outputData) {
-                // Gehe durch jeden Wert in der Zeile
                 for (int j = 0; j < rowData.length; j++) {
                     String parameterName = j < parameterNames.length ? parameterNames[j] : "Output " + (j + 1);
-                    lastResults.put(parameterName, rowData[j]); // Speichere den Wert in lastResults
+                    lastResults.put(parameterName, rowData[j]);
                 }
 
-                // Überprüfen Sie, ob "the distribution of migration/invasion" kleiner als 0 ist
+                // Postprocessing: if the invasion distribution is negative, set related outputs to 0
                 if (lastResults.get("the distribution of migration/invasion") < -0.01) {
-                    // Setzen Sie "the migration/invasion radius", "the number of cell projections" und "the distribution of migration/invasion" auf 0
                     lastResults.put("the migration/invasion radius", 0.0f);
                     lastResults.put("the distribution of migration/invasion", 0.0f);
                     lastResults.put("the number of cell projections", 0.0f);
-
                 }
             }
 
-            // Übertrage die Ergebnisse in die ResultsTable und zeige sie an
+            // Display values in ResultsTable
             visualizeResults(rt);
 
         } catch (OrtException e) {
             IJ.error("Error when processing ONNX model output", e.getMessage());
         }
     }
-
 
     private void visualizeResults(ResultsTable rt) {
         for (Map.Entry<String, Float> entry : lastResults.entrySet()) {
