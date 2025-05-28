@@ -15,7 +15,7 @@ import java.util.Map;
 import java.util.HashMap;
 
 /**
- * The Segmentation_module_5 class implements the PlugIn interface for FIJI, focusing on preprocessing images
+ * The SegmentationModule class implements the PlugIn interface for FIJI, focusing on preprocessing images
  * to facilitate better analysis for embryo implantation studies.
  *
  * - We use a tolerance approach:
@@ -31,7 +31,7 @@ import java.util.HashMap;
  *
  *
  */
-public class Segmentation_module_5 implements PlugIn {
+public class SegmentationModule implements PlugIn {
 
     // Define the metrics with their threshold values.
     private static final Map<String, Double> qualityThresholds = new HashMap<>();
