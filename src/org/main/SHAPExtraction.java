@@ -1,27 +1,24 @@
-
 /**
  * SHAPExtraction - Module for the extraction and visualization of SHAP values.
  *
  * This module is part of the ImplantoMetrics plugin and is used to analyze the significance of
  * parameters and features in the context of embryo implantation or similar biological processes.
- * It extracts SHAP (SHapley Additive exPlanations) values from CSV files representing different time intervals.
- * time intervals and visualizes the results for further analysis.
+ * It extracts SHAP (SHapley Additive exPlanations) values from CSV files representing different time intervals
+ * and visualizes the results for further analysis.
  *
  * Main tasks of this module:
  * - Loading SHAP values from CSV files representing two models (Model A and Model B)
- * and for interactions between features.
+ *   and for interactions between features.
  * - Processing and filtering of SHAP values based on a time interval entered by the user.
- * time interval entered by the user.
- * Visualization of the extracted SHAP values in a ResultsTable, which provides a quick
- * overview of the meaning of different parameters and features.
+ * - Visualization of the extracted SHAP values in a ResultsTable, which provides a quick
+ *   overview of the meaning of different parameters and features.
  *
  * Application:
  * - Embryo implantation research: analyzing the dynamics and importance of individual
- * parameters over different time intervals.
- * - Other biological contexts in which the interactions between several traits and their and their temporal significance are investigated.
- *
+ *   parameters over different time intervals.
+ * - Other biological contexts in which the interactions between several traits and their
+ *   temporal significance are investigated.
  */
-
 
 package org.ImplantoMetrics;
 
@@ -43,7 +40,7 @@ import java.util.HashMap;
 public class SHAPExtraction implements PlugIn {
 
     private Map<String, Double> extractedSHAPValuesWithName = new HashMap<>();
-    private int time = -1;
+    private int time = -1; // user-specified time point in hours (0-143)
 
     public Map<String, Double> getExtractedSHAPValuesWithName() {
         return extractedSHAPValuesWithName;
@@ -59,32 +56,38 @@ public class SHAPExtraction implements PlugIn {
 
     @Override
     public void run(String arg) {
+        // Prompt user for time input if not yet defined
         if (time == -1) {
             int hour = getUserInput();
             if (hour == -1) return;
             this.time = hour;
         }
 
+        // Determine which time interval to evaluate based on input
         int timeIntervalStart = (time / 8) * 8;
         int timeIntervalEnd = timeIntervalStart + 8;
 
         try {
+            // Load SHAP values for two models and interaction effects
             List<String[]> shapValuesModelA = loadCSV("Model-A.csv", ';');
             List<String[]> shapValuesModelB = loadCSV("Model-B.csv", ';');
             List<String[]> interactionShapValues = loadCSV("interaction_intervals.csv", ',');
 
+            // Process and display each dataset
             processAndDisplayData(shapValuesModelA, timeIntervalStart, timeIntervalEnd);
             processAndDisplayData(shapValuesModelB, timeIntervalStart, timeIntervalEnd);
             processAndDisplayData(interactionShapValues, timeIntervalStart, timeIntervalEnd);
 
+            // Visualize results in FIJI table
             visualizeResults();
 
         } catch (Exception e) {
-            IJ.error("Fehler bei der Verarbeitung", e.getMessage());
+            IJ.error("Processing Error", e.getMessage());
             e.printStackTrace();
         }
     }
 
+    // Prompt dialog for user to enter time in hours (0–143)
     private int getUserInput() {
         String input = JOptionPane.showInputDialog("Please enter the Time (0-143h):");
         if (input == null || input.isEmpty()) {
@@ -103,12 +106,14 @@ public class SHAPExtraction implements PlugIn {
         }
     }
 
+    // Wrapper to process values from a SHAP CSV list
     private void processAndDisplayData(List<String[]> shapValues, int timeIntervalStart, int timeIntervalEnd) {
         extractAndPrintValues(shapValues, timeIntervalStart, timeIntervalEnd);
     }
 
+    // Core logic to extract SHAP values in a specified interval
     private void extractAndPrintValues(List<String[]> shapValues, int timeIntervalStart, int timeIntervalEnd) {
-        String[] headers = shapValues.get(0);
+        String[] headers = shapValues.get(0); // First row: column names
         for (int i = 1; i < shapValues.size(); i++) {
             String[] row = shapValues.get(i);
             Integer timeValue = extractTimeValue(row[0]);
@@ -117,24 +122,25 @@ public class SHAPExtraction implements PlugIn {
                     try {
                         String valueStr = row[j];
                         if (valueStr.contains(":")) {
-                            valueStr = valueStr.split(":")[1].trim();
+                            valueStr = valueStr.split(":"[1].trim());
                         }
                         double value = Double.parseDouble(valueStr);
                         String columnName = headers[j];
                         extractedSHAPValuesWithName.put(columnName, value);
                     } catch (NumberFormatException e) {
-                        System.err.println("Fehler beim Parsen zum Double: " + row[j] + " (Zeile " + (i + 1) + ", Spalte " + (j + 1) + ")");
+                        System.err.println("Parsing error at: " + row[j] + " (row " + (i + 1) + ", col " + (j + 1) + ")");
                     }
                 }
             }
         }
 
-        // Ausgabe der extrahierten SHAP-Werte für Debugging
+        // Optional console debug print
         for (Map.Entry<String, Double> entry : extractedSHAPValuesWithName.entrySet()) {
             System.out.println(entry.getKey() + ": " + entry.getValue());
         }
     }
 
+    // Show results in ImageJ ResultsTable
     private void visualizeResults() {
         ResultsTable rt = new ResultsTable();
 
@@ -147,15 +153,17 @@ public class SHAPExtraction implements PlugIn {
         //rt.show("Extracted SHAP Values");
     }
 
+    // Extract numerical time value from a CSV entry (e.g., "24-32")
     private static Integer extractTimeValue(String timeString) {
         try {
             return Integer.parseInt(timeString.split("-")[0].trim());
         } catch (NumberFormatException e) {
-            System.err.println("Fehler beim Parsen der Zeit: " + timeString);
+            System.err.println("Time parsing error: " + timeString);
             return null;
         }
     }
 
+    // Load CSV resource from the project with a specified delimiter
     private static List<String[]> loadCSV(String resourceName, char separator) throws Exception {
         CSVParser csvParser = new CSVParserBuilder().withSeparator(separator).build();
         try (InputStream inputStream = SHAPExtraction.class.getClassLoader().getResourceAsStream(resourceName);
@@ -170,8 +178,8 @@ public class SHAPExtraction implements PlugIn {
         }
     }
 
+    // Normalize column/parameter names for consistent naming across modules
     private String normalizeParameterName(String columnName) {
-        // Normalisiere die Parameternamen, damit sie in allen Modulen konsistent sind
         if (columnName.equalsIgnoreCase("Cell Radius")) return "spheroid radius";
         if (columnName.equalsIgnoreCase("Area")) return "total spheroid and cell projections area";
         if (columnName.equalsIgnoreCase("Migration Radius")) return "the migration/invasion radius";
