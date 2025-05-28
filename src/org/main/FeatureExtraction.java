@@ -1,3 +1,9 @@
+/**
+ * The FeatureExtraction class implements the PlugIn interface for FIJI, utilizing ONNX runtime
+ * to extract specific features from an image using a pre-trained machine learning model.
+ * This class is designed to perform feature extraction on images for further analysis in
+ * embryo implantation studies or other biological image analyses.
+ */
 package org.ImplantoMetrics;
 
 import ai.onnxruntime.*;
@@ -8,33 +14,26 @@ import ij.process.ImageProcessor;
 import java.nio.FloatBuffer;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional; // Hinzugefügt
+import java.util.Optional;
 import java.util.Set;
 import java.io.IOException;
 import ij.measure.ResultsTable;
 import java.io.InputStream;
 import java.io.ByteArrayOutputStream;
 
-/**
- * The FeatureExtractione class implements the PlugIn interface for FIJI, utilizing ONNX runtime
- * to extract specific features from an image using a pre-trained machine learning model.
- * This class is designed to perform feature extraction on images for further analysis in
- * embryo implantation studies or other biological image analyses.
- *
- */
+public class FeatureExtraction implements PlugIn {
 
-public class FeatureExtene implements PlugIn {
+    private OrtEnvironment environment; // ONNX Runtime environment
+    private OrtSession session;         // ONNX model session
+    ResultsTable rt = new ResultsTable(); // Table to store feature results
 
-    private OrtEnvironment environment;
-    private OrtSession session;
-    ResultsTable rt = new ResultsTable();
-
-    private Map<String, Double> extractedFeaturesWithName = new HashMap<>();
+    private Map<String, Double> extractedFeaturesWithName = new HashMap<>(); // Map to store feature names and values
 
     public Map<String, Double> getExtractedFeaturesWithName() {
         return extractedFeaturesWithName;
     }
 
+    // Mapping indices to readable feature names
     private static final Map<Integer, String> featureNames = new HashMap<>();
     static {
         for (int i = 0; i <= 256; i++) {
@@ -45,35 +44,37 @@ public class FeatureExtene implements PlugIn {
     @Override
     public void run(String arg) {
         try {
-            // Initialize ONNX runtime environment and session with a pre-loaded model.
+            // Initialize ONNX runtime environment and session with a pre-loaded model
             environment = OrtEnvironment.getEnvironment();
             session = createSessionWithModel(environment);
 
             ImagePlus img = IJ.getImage();
             if (img == null) {
-                IJ.log("Kein Bild in ImageJ geöffnet.");
+                IJ.log("No image opened in ImageJ.");
                 return;
             }
 
+            // Select all 256 features for extraction
             int[] selectedIndices = new int[256];
             for (int i = 0; i < selectedIndices.length; i++) {
                 selectedIndices[i] = i;
             }
 
+            // Extract features
             float[] extractedFeatures = extractFeaturesFromImage(img, selectedIndices);
 
+            // Save features to map with names
             saveExtractedFeaturesWithName(extractedFeatures, selectedIndices);
 
-            // Speichern der Ergebnisse in der ResultsTable
+            // Add each feature to the results table
             for (Map.Entry<String, Double> entry : extractedFeaturesWithName.entrySet()) {
                 rt.incrementCounter();
                 rt.addValue("Feature Name", entry.getKey());
                 rt.addValue("Feature Value", entry.getValue());
             }
-            //rt.show("Extracted Features");
 
         } catch (Exception e) {
-            IJ.log("Ein Fehler ist aufgetreten: " + e.getMessage());
+            IJ.log("An error occurred: " + e.getMessage());
             e.printStackTrace();
         } finally {
             closeResources();
@@ -81,11 +82,12 @@ public class FeatureExtene implements PlugIn {
     }
 
     public FeatureExtene() throws Exception {
-        // Initialize the ONNX runtime environment and the session
+        // Initialize ONNX environment and session (constructor variant)
         environment = OrtEnvironment.getEnvironment();
         session = createSessionWithModel(environment);
     }
 
+    // Reads a full InputStream into a byte array
     private byte[] readAllBytes(InputStream inputStream) throws IOException {
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         int nRead;
@@ -97,42 +99,43 @@ public class FeatureExtene implements PlugIn {
         return buffer.toByteArray();
     }
 
+    // Load ONNX model into session
     private OrtSession createSessionWithModel(OrtEnvironment environment) throws OrtException {
         String modelResourcePath = "/input15.4.onnx";
         try (InputStream modelInputStream = getClass().getResourceAsStream(modelResourcePath)) {
             if (modelInputStream == null) {
-                throw new OrtException("Das ONNX-Modell konnte nicht geladen werden.");
+                throw new OrtException("Failed to load ONNX model.");
             }
             byte[] modelBytes = readAllBytes(modelInputStream);
             return environment.createSession(modelBytes, new OrtSession.SessionOptions());
         } catch (IOException e) {
-            OrtException ortException = new OrtException("Fehler beim Lesen des ONNX-Modells.");
-            // Setzen der Ursache der Ausnahme
+            OrtException ortException = new OrtException("Error reading ONNX model file.");
             ortException.initCause(e);
             throw ortException;
         }
     }
 
+    // Main method to extract selected features from an image using the ONNX model
     public float[] extractFeaturesFromImage(ImagePlus img, int[] selectedIndices) throws OrtException, IOException {
         if (img == null) {
             throw new IllegalArgumentException("The transferred ImagePlus object is null.");
         }
 
-        // Processing of the image in a FloatBuffer
+        // Convert image to FloatBuffer (grayscale, resized)
         FloatBuffer floatBuffer = processImage(img);
 
         long[] shape = {1, 299, 299, 1};
         OnnxTensor tensor = OnnxTensor.createTensor(environment, floatBuffer, shape);
 
-        // Vorbereitung der Inputs für das ONNX-Modell
+        // Prepare input tensor
         Map<String, OnnxTensor> inputs = new HashMap<>();
         Set<String> inputNames = session.getInputNames();
         inputs.put(inputNames.iterator().next(), tensor);
 
-        // Execution of the ONNX model with the prepared inputs
+        // Run ONNX model
         OrtSession.Result result = session.run(inputs);
 
-        // Access to the desired output layer
+        // Access specific output layer from the model
         String featureOutputName = "model_1/dense_2/BiasAdd:0";
         Optional<OnnxValue> featureLayerValueOptional = result.get(featureOutputName);
         if (!featureLayerValueOptional.isPresent()) {
@@ -145,7 +148,7 @@ public class FeatureExtene implements PlugIn {
             throw new IllegalStateException("Penultimate layer output is empty or null");
         }
 
-        // Ensure we don't exceed the array bounds
+        // Extract only the selected features
         int maxIndex = Math.min(selectedIndices.length, featureLayerData[0].length);
         float[] extractedFeatures = new float[maxIndex];
         for (int i = 0; i < maxIndex; i++) {
@@ -154,9 +157,10 @@ public class FeatureExtene implements PlugIn {
         return extractedFeatures;
     }
 
+    // Convert image to float array after resizing and grayscaling
     private FloatBuffer processImage(ImagePlus img) {
-        ImageProcessor ip = img.getProcessor().convertToByte(true); // Konvertiere zu Graustufen
-        ip = ip.resize(299, 299); // Ändere die Größe auf 299x299
+        ImageProcessor ip = img.getProcessor().convertToByte(true);
+        ip = ip.resize(299, 299);
         return FloatBuffer.wrap(imageToFloatArray(ip));
     }
 
@@ -168,28 +172,30 @@ public class FeatureExtene implements PlugIn {
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 int pixel = ip.getPixel(x, y);
-                floats[i++] = (pixel & 0xff) / 255.0f; // Graustufenwert extrahieren und normalisieren
+                floats[i++] = (pixel & 0xff) / 255.0f;
             }
         }
         return floats;
     }
 
+    // Close ONNX session and environment properly
     private void closeResources() {
         try {
             if (session != null) {
                 session.close();
-                System.out.println("ONNX Session geschlossen.");
+                System.out.println("ONNX session closed.");
             }
             if (environment != null) {
                 environment.close();
-                System.out.println("ONNX Environment geschlossen.");
+                System.out.println("ONNX environment closed.");
             }
         } catch (OrtException e) {
-            IJ.log("Fehler beim Schließen der Ressourcen: " + e.getMessage());
+            IJ.log("Error closing resources: " + e.getMessage());
             e.printStackTrace();
         }
     }
 
+    // Store the extracted feature values with their respective names
     private void saveExtractedFeaturesWithName(float[] extractedFeatures, int[] selectedIndices) {
         for (int i = 0; i < extractedFeatures.length; i++) {
             String featureName = featureNames.getOrDefault(selectedIndices[i], "Feature " + selectedIndices[i]);
