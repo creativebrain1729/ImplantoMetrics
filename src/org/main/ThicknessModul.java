@@ -35,7 +35,6 @@ public class ThicknessModul implements PlugIn {
         IJ.run(image, "3D Surface Plot", options);
 
         // Note: While this module uses the term "ThicknessModul", it primarily generates a 3D surface plot,
-        // which can be interpreted in various ways depending on the image content and the scientific context.
         // It does not directly measure physical thickness unless the image and plot are calibrated accordingly.
     }
 }
