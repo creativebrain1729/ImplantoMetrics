@@ -16,7 +16,7 @@
  * - Student-T likelihood (ν=8) for outlier robustness.
  * - Δ-matrix for 3 groups × n_time to capture temporal/group biases.
  * - Experimentel E-group was used to simulate high-invasion controls.
- * - Weight w_A = 98: A-group is treated as calibration gold standard to anchor
+ * - Weight w_A = 80: A-group is treated as calibration gold standard to anchor
  * - Convergence checked via R-hat (<1.05).
  *
  * Output:
