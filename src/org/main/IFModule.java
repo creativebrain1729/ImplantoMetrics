@@ -1,3 +1,35 @@
+/**
+ * IF_Module – Main module for calculating the Invasion Factor (IF).
+ *
+ * Integrates SHAPExtraction, ParameterButonom, FeatureExtene to compute a calibrated invasion
+ * score based on SHAP values, morphological parameters, interactions, and a dynamic sigmoid model.
+ *
+ * Key Functions:
+ * - Prompts user for time (0–143h).
+ * - Extracts morphology via ONNX (ParameterButonom) and CNN features (FeatureExtene).
+ * - Loads SHAP values for Model-A, Model-B, and interaction terms.
+ * - Computes raw IF via weighted SHAP × parameter metric.
+ * - Applies group- and time-specific sigmoid calibration (groups A, D, E).
+ *
+ * Sigmoid Calibration (Supplementary Methods, Fig. S7/Table S3):
+ * - Bayesian inference (PyMC): 4 global params b0,b1,k,x0 ~ Normal(0,1), σ ~ HalfNormal(0,0.03).
+ * - Student-T likelihood (ν=8) for outlier robustness.
+ * - Δ-matrix for 3 groups × n_time to capture temporal/group biases.
+ * - Experimentel E-group was used to simulate high-invasion controls.
+ * - Weight w_A = 98: A-group is treated as calibration gold standard to anchor
+ * - Convergence checked via R-hat (<1.05).
+ *
+ * Output:
+ * - Calibrated IF displayed in an ImageJ ResultsTable; classification “A”, “D”, “E”.
+ *
+ * JSON Model Source:
+ * - sigmoid_global_v11.2.json 
+ *
+ * Dependencies:
+ * - ParameterButonom, FeatureExtene, SHAPExtraction, sigmoid_global_v11.2.json.
+ */
+
+
 package org.ImplantoMetrics;
 
 import ij.IJ;
@@ -10,7 +42,7 @@ import java.io.InputStreamReader;
 import java.util.*;
 import com.google.gson.*;
 
-public class IF_module_45 implements PlugIn {
+public class IF_Module implements PlugIn {
 
     private final List<Double> rawIFHistory = new ArrayList<>();
     private final Map<String, Double> paramVals = new HashMap<>();
@@ -19,12 +51,17 @@ public class IF_module_45 implements PlugIn {
 
     @Override
     public void run(String arg) {
+        // Prompt user to enter time point in hours
         int timeH = askTime();
 
+        // Load parameter and feature data using respective modules
         readParameters();
         readFeatures();
+
+        // Load SHAP values for given time point
         SHAPExtraction shap = readSHAP(timeH);
 
+        // Compute raw Invasion Factor
         double rawIF = calculateImplantationFactor(
                 shap.getExtractedSHAPValuesWithName().values().stream()
                         .mapToDouble(Double::doubleValue).toArray(),
@@ -39,6 +76,7 @@ public class IF_module_45 implements PlugIn {
 
         rawIFHistory.add(rawIF);
 
+        // Evaluate classification based on slope of last 4 IF values
         if (rawIFHistory.size() >= 4) {
             double s0 = rawIFHistory.get(rawIFHistory.size() - 4);
             double s3 = rawIFHistory.get(rawIFHistory.size() - 1);
@@ -48,8 +86,10 @@ public class IF_module_45 implements PlugIn {
             classification = "A";
         }
 
+        // Apply sigmoid calibration to raw IF
         double calIF = TimeSigmoidCalibrator.apply(rawIF, timeH, classification);
 
+        // Display result in ImageJ ResultsTable
         ResultsTable rt = new ResultsTable();
         rt.incrementCounter();
         rt.addValue("Time_h", timeH);
@@ -57,6 +97,7 @@ public class IF_module_45 implements PlugIn {
         rt.show("Results");
     }
 
+    // Prompt dialog for time input
     private int askTime() {
         String in = JOptionPane.showInputDialog("Please enter Time [h] (0–143):");
         try {
@@ -67,32 +108,22 @@ public class IF_module_45 implements PlugIn {
         throw new RuntimeException("invalid time input");
     }
 
+    // Normalize parameter/feature names for consistency
     private String normalizeName(String c) {
         if (c == null) return "";
         String s = c.trim().toLowerCase();
-
-        if (s.equals("cell radius") || s.equals("radius") || s.equals("spheroid size")) {
-            return "spheroid radius";
-        } else if (s.equals("area") || s.equals("spheroid area") || s.equals("cell area")) {
-            return "total spheroid and cell projections area";
-        } else if (s.equals("migration radius") || s.equals("invasion radius") || s.equals("migration/invasion radius")) {
-            return "the migration/invasion radius";
-        } else if (s.equals("distribution of migration") || s.equals("distribution of invasion")) {
-            return "the distribution of migration/invasion";
-        } else if (s.equals("number of projections") || s.equals("projection count") || s.equals("cell projections")) {
-            return "the number of cell projections";
-        } else {
-            return c;
-        }
+        if (s.equals("cell radius") || s.equals("radius") || s.equals("spheroid size")) return "spheroid radius";
+        if (s.equals("area") || s.equals("spheroid area") || s.equals("cell area")) return "total spheroid and cell projections area";
+        if (s.equals("migration radius") || s.equals("invasion radius") || s.equals("migration/invasion radius")) return "the migration/invasion radius";
+        if (s.equals("distribution of migration") || s.equals("distribution of invasion")) return "the distribution of migration/invasion";
+        if (s.equals("number of projections") || s.equals("projection count") || s.equals("cell projections")) return "the number of cell projections";
+        return c;
     }
-
-
 
     private void readParameters() {
         paramVals.clear();
         new ParameterButonom().run("");
-        ParameterButonom.getLastResults()
-                .forEach((k, v) -> paramVals.put(normalizeName(k), (double) v));
+        ParameterButonom.getLastResults().forEach((k, v) -> paramVals.put(normalizeName(k), (double) v));
     }
 
     private void readFeatures() {
@@ -114,6 +145,7 @@ public class IF_module_45 implements PlugIn {
         return s;
     }
 
+    // Filter for key morphological parameters
     private double[] extractMeasuredParams() {
         String[] keys = {
                 "spheroid radius",
@@ -127,6 +159,7 @@ public class IF_module_45 implements PlugIn {
                 .toArray();
     }
 
+    // Create parameter index mapping for SHAP-feature interaction matrix
     private Map<String, Integer> createIdx() {
         String[] names = {
                 "spheroid radius",
@@ -140,6 +173,7 @@ public class IF_module_45 implements PlugIn {
         return map;
     }
 
+    // Build symmetric interaction matrix from SHAP keys like "Area-Feature_4"
     private double[][] extractInteractionValues(Map<String, Double> shap, int featCnt) {
         double[][] mat = new double[featCnt][featCnt];
         Map<String, Integer> idx = createIdx();
@@ -162,6 +196,7 @@ public class IF_module_45 implements PlugIn {
         return mat;
     }
 
+    // Compute raw IF using weighted SHAP × parameter score
     private double calculateImplantationFactor(
             double[] shapValues,
             double[] measuredParams,
@@ -184,6 +219,7 @@ public class IF_module_45 implements PlugIn {
         return numerator / Math.sqrt(Math.max(denominator, 1e-9));
     }
 
+    // Static sigmoid-based calibration utility
     private static final class TimeSigmoidCalibrator {
         static class Model {
             double[] p;
@@ -193,7 +229,6 @@ public class IF_module_45 implements PlugIn {
 
         private static final List<Integer> TIME_GRID = new ArrayList<>();
         private static final List<String> GROUPS = Arrays.asList("A", "D", "E");
-
         private static final Map<String, Map<Integer, Model>> MODEL_MAP = new HashMap<>();
 
         static {
@@ -227,7 +262,6 @@ public class IF_module_45 implements PlugIn {
                     int len = Math.min(Math.min(medA.size(), iqrA.size()), TIME_GRID.size());
                     int deltaLen = deltaGrp.size();
                     for (int t = 0; t < Math.min(len, deltaLen); t++) {
-
                         Model m = new Model();
                         m.p = params;
                         m.med = medA.get(t);
@@ -239,7 +273,7 @@ public class IF_module_45 implements PlugIn {
                     MODEL_MAP.put(group, map);
                 }
             } catch (Exception e) {
-                IJ.log("[SigmoidCalibrator] Fehler beim Laden des Modells: " + e);
+                IJ.log("[SigmoidCalibrator] Failed to load model: " + e);
             }
         }
 
@@ -258,6 +292,5 @@ public class IF_module_45 implements PlugIn {
             arg = Math.max(Math.min(arg, 700), -700);
             return m.p[0] + m.p[1] / (1.0 + Math.exp(arg));
         }
-
     }
 }
