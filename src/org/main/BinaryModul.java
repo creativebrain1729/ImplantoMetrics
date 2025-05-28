@@ -4,7 +4,7 @@ import ij.IJ;
 import ij.ImagePlus;
 import ij.plugin.PlugIn;
 
-/**
+/*
  * The BinaryModule class implements the PlugIn interface for FIJI, dedicated to processing images
  * into binary form. This is particularly useful in various image analysis tasks where binary
  * segmentation is required.
