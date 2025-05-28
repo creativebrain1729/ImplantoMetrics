@@ -20,7 +20,7 @@ import ij.measure.ResultsTable;
  *
  * This plugin is part of the software described in the publication:
  * "ImplantoMetrics - Multidimensional trophoblast invasion assessment by combining
- * 3D-in-vitro modeling and deep learning analysis" (see https://doi.org/xyz123).
+ * 3D-in-vitro modeling and deep learning analysis" (see doi: https://doi.org/10.1101/2025.04.25.650556 ).
  *
  * It loads a pretrained ONNX model to extract six key morphological parameters
  * from segmented and binarized microscopy images of spheroids:
