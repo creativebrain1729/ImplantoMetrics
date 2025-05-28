@@ -20,7 +20,7 @@
  * - Convergence checked via R-hat (<1.05).
  *
  * Output:
- * - Calibrated IF displayed in an ImageJ ResultsTable; classification “A”, “D”, “E”.
+ * - Calibrated IF displayed in an ImageJ ResultsTable
  *
  * JSON Model Source:
  * - sigmoid_global_v11.2.json 
