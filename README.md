@@ -61,8 +61,8 @@ ImplantoMetrics assesses critical parameters, including spheroid radius, total s
 1. **Parameter Extraction:**
    - Click the 'Parameter' button to upload the pre-trained `ImplantationMetrics model`. This model will predict six critical parameters related to invasion success  .
 
-2. **Calculating the Implantation Factor:**
-   - Select the 'Implantation Factor' button, then enter the acquisition time of the image. The plugin calculates the implantation factor based on the predicted parameters and extracted features, representing the probability of successful invasion .
+2. **Calculating the Invasion Factor:**
+   - Select the 'Invasion Factor' button, then enter the acquisition time of the image. The plugin calculates the invasion factor based on the predicted parameters and extracted features, representing the probability of successful invasion .
 
 ### Step 4: Visualization and Results
 
